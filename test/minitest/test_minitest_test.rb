@@ -774,6 +774,12 @@ class TestMinitestRunnable < Minitest::Test
 
     assert_marshal %w[@NAME @assertions @failures]
   end
+
+  def test_spec_marshal
+    klass = describe("whatever") { }
+    setup_marshal klass
+    assert_marshal %w[@NAME @assertions @failures]
+  end
 end
 
 class TestMinitestTest < TestMinitestRunnable
