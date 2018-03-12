@@ -17,6 +17,7 @@ lib/minitest/mock.rb
 lib/minitest/parallel.rb
 lib/minitest/pride.rb
 lib/minitest/pride_plugin.rb
+lib/minitest/reporter.rb
 lib/minitest/spec.rb
 lib/minitest/sprint.rb
 lib/minitest/sprint_plugin.rb
