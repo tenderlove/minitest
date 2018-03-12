@@ -89,7 +89,7 @@ describe Minitest::Spec do
   end
 
   it "needs to catch an expected exception" do
-    @assertion_count = 2
+    @assertion_count -= 2
 
     expect { raise "blah" }.must_raise RuntimeError
     expect { raise Minitest::Assertion }.must_raise Minitest::Assertion
@@ -130,7 +130,7 @@ describe Minitest::Spec do
 
     @assertion_count = 2
 
-    methods = Object.public_instance_methods.find_all { |n| n =~ /^must|^wont/ }
+    methods = Minitest::Expectation.public_instance_methods.grep(/^(must|wont)/)
     methods.map!(&:to_s) if Symbol === methods.first
 
     musts, wonts = methods.sort.partition { |m| m =~ /^must/ }
@@ -175,6 +175,8 @@ describe Minitest::Spec do
   end
 
   it "needs to verify binary messages" do
+    @assertion_count += 3 # empty is 2 assertions
+
     _(_(42).wont_be(:<, 24)).must_equal false
 
     assert_triggered "Expected 24 to not be < 42." do
@@ -218,19 +220,9 @@ describe Minitest::Spec do
     end
   end
 
-  it "needs to warn on equality with nil" do
-    @assertion_count += 1 # extra test
-
-    out, err = capture_io do
-      _(_(nil).must_equal(nil)).must_equal true
-    end
-
-    exp = "DEPRECATED: Use assert_nil if expecting nil from #{__FILE__}:#{__LINE__-3}. " \
-      "This will fail in Minitest 6.\n"
-    exp = "" if $-w.nil?
-
-    assert_empty out
-    assert_equal exp, err
+  it "needs to fail on equality with nil" do
+    @assertion_count -= 2
+    expect { _(nil).must_equal(nil) }.must_raise Minitest::Assertion
   end
 
   it "needs to verify floats outside a delta" do
@@ -242,12 +234,11 @@ describe Minitest::Spec do
       _(6 * 7.0).wont_be_close_to 42
     end
 
-    x = maglev? ? "1.0000000000000001e-05" : "1.0e-05"
-    assert_triggered "Expected |42 - 42.0| (0.0) to not be <= #{x}." do
+    assert_triggered "Expected |42 - 42.0| (0.0) to not be <= 1.0e-05." do
       _(6 * 7.0).wont_be_close_to 42, 0.00001
     end
 
-    assert_triggered "msg.\nExpected |42 - 42.0| (0.0) to not be <= #{x}." do
+    assert_triggered "msg.\nExpected |42 - 42.0| (0.0) to not be <= 1.0e-05." do
       _(6 * 7.0).wont_be_close_to 42, 0.00001, "msg"
     end
   end
@@ -257,17 +248,15 @@ describe Minitest::Spec do
 
     _(_(24).wont_be_within_epsilon(42)).must_equal false
 
-    x = maglev? ? "0.042000000000000003" : "0.042"
-    assert_triggered "Expected |42 - 42.0| (0.0) to not be <= #{x}." do
+    assert_triggered "Expected |42 - 42.0| (0.0) to not be <= 0.042." do
       _(6 * 7.0).wont_be_within_epsilon 42
     end
 
-    x = maglev? ? "0.00042000000000000002" : "0.00042"
-    assert_triggered "Expected |42 - 42.0| (0.0) to not be <= #{x}." do
+    assert_triggered "Expected |42 - 42.0| (0.0) to not be <= 0.00042." do
       _(6 * 7.0).wont_be_within_epsilon 42, 0.00001
     end
 
-    assert_triggered "msg.\nExpected |42 - 42.0| (0.0) to not be <= #{x}." do
+    assert_triggered "msg.\nExpected |42 - 42.0| (0.0) to not be <= 0.00042." do
       _(6 * 7.0).wont_be_within_epsilon 42, 0.00001, "msg"
     end
   end
@@ -281,12 +270,11 @@ describe Minitest::Spec do
       _(1.0 / 100).must_be_close_to 0.0
     end
 
-    x = maglev? ? "9.9999999999999995e-07" : "1.0e-06"
-    assert_triggered "Expected |0.0 - 0.001| (0.001) to be <= #{x}." do
+    assert_triggered "Expected |0.0 - 0.001| (0.001) to be <= 1.0e-06." do
       _(1.0 / 1000).must_be_close_to 0.0, 0.000001
     end
 
-    assert_triggered "msg.\nExpected |0.0 - 0.001| (0.001) to be <= #{x}." do
+    assert_triggered "msg.\nExpected |0.0 - 0.001| (0.001) to be <= 1.0e-06." do
       _(1.0 / 1000).must_be_close_to 0.0, 0.000001, "msg"
     end
   end
@@ -508,45 +496,6 @@ describe Minitest::Spec do
     it "can use expect in a thread" do
       Thread.new { _(1 + 1).must_equal 2 }.join
     end
-
-    it "can NOT use must_equal in a thread. It must use expect in a thread" do
-      skip "N/A" if ENV["MT_NO_EXPECTATIONS"]
-      assert_raises RuntimeError do
-        capture_io do
-          Thread.new { (1 + 1).must_equal 2 }.join
-        end
-      end
-    end
-
-    it "fails gracefully when expectation used outside of `it`" do
-      skip "N/A" if ENV["MT_NO_EXPECTATIONS"]
-
-      @assertion_count += 1
-
-      e = assert_raises RuntimeError do
-        capture_io do
-          Thread.new { # forces ctx to be nil
-            describe("woot") do
-              (1 + 1).must_equal 2
-            end
-          }.join
-        end
-      end
-
-      assert_equal "Calling #must_equal outside of test.", e.message
-    end
-
-    it "deprecates expectation used without _" do
-      skip "N/A" if ENV["MT_NO_EXPECTATIONS"]
-
-      @assertion_count += 3
-
-      exp = /DEPRECATED: global use of must_equal from/
-
-      assert_output "", exp do
-        (1 + 1).must_equal 2
-      end
-    end
   end
 
   it "needs to verify throw" do
@@ -586,7 +535,7 @@ describe Minitest::Spec do
   end
 
   it "needs to verify using any (negative) predicate" do
-    @assertion_count -= 1 # doesn"t take a message
+    @assertion_count += 1
 
     _(_("blah").wont_be(:empty?)).must_equal false
 
@@ -596,7 +545,7 @@ describe Minitest::Spec do
   end
 
   it "needs to verify using any binary operator" do
-    @assertion_count -= 1 # no msg
+    @assertion_count += 1
 
     _(_(41).must_be(:<, 42)).must_equal true
 
@@ -606,7 +555,7 @@ describe Minitest::Spec do
   end
 
   it "needs to verify using any predicate" do
-    @assertion_count -= 1 # no msg
+    @assertion_count += 1
 
     _(_("").must_be(:empty?)).must_equal true
 
@@ -618,11 +567,11 @@ describe Minitest::Spec do
   it "needs to verify using respond_to" do
     _(_(42).must_respond_to(:+)).must_equal true
 
-    assert_triggered "Expected 42 (#{Int.name}) to respond to #clear." do
+    assert_triggered "Expected 42 to respond to #clear." do
       _(42).must_respond_to :clear
     end
 
-    assert_triggered "msg.\nExpected 42 (#{Int.name}) to respond to #clear." do
+    assert_triggered "msg.\nExpected 42 to respond to #clear." do
       _(42).must_respond_to :clear, "msg"
     end
   end

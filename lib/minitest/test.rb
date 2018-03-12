@@ -13,7 +13,7 @@ module Minitest
     include Minitest::Reportable
 
     def class_name # :nodoc:
-      self.class.name # for Minitest::Reportable
+      self.class.name # for Minitest::Reportable -- shouldn't be necessary?
     end
 
     PASSTHROUGH_EXCEPTIONS = [NoMemoryError, SignalException, SystemExit] # :nodoc:
@@ -80,7 +80,7 @@ module Minitest
     # Defines the order to run tests (:random by default). Override
     # this or use a convenience method to change it for your tests.
 
-    def self.test_order
+    def self.test_order # TODO: rename to run_order
       :random
     end
 
@@ -216,5 +216,3 @@ module Minitest
     extend Guard
   end # Test
 end
-
-require "minitest/unit" unless defined?(MiniTest) # compatibility layer only

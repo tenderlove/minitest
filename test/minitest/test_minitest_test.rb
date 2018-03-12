@@ -80,10 +80,6 @@ class TestMinitestUnit < MetaMetaMetaTestCase
     assert_equal ex, fu
   end
 
-  # def test_default_runner_is_minitest_unit
-  #   assert_instance_of Minitest::Unit, Minitest::Unit.runner
-  # end
-
   def test_infectious_binary_encoding
     @tu = Class.new FakeNamedTest do
       def test_this_is_not_ascii_assertion
@@ -587,8 +583,6 @@ class TestMinitestRunner < MetaMetaMetaTestCase
   end
 
   def test_run_parallel
-    skip "I don't have ParallelEach debugged yet" if maglev?
-
     test_count = 2
     test_latch = Latch.new test_count
     wait_latch = Latch.new test_count
@@ -787,25 +781,6 @@ class TestMinitestRunnable < Minitest::Test
 
     assert_marshal %w[@NAME @assertions @failures @klass @source_location @time]
   end
-
-  def test_spec_marshal
-    klass = describe("whatever") { it("passes") { assert true } }
-    rm = klass.runnable_methods.first
-
-    # Run the test
-    @tc = klass.new(rm).run
-
-    assert_kind_of Minitest::Result, @tc
-
-    # Pass it over the wire
-    over_the_wire = Marshal.load Marshal.dump @tc
-
-    assert_equal @tc.time,       over_the_wire.time
-    assert_equal @tc.name,       over_the_wire.name
-    assert_equal @tc.assertions, over_the_wire.assertions
-    assert_equal @tc.failures,   over_the_wire.failures
-    assert_equal @tc.klass,      over_the_wire.klass
-  end
 end
 
 class TestMinitestTest < TestMinitestRunnable
@@ -839,7 +814,7 @@ class TestMinitestUnitTestCase < Minitest::Test
 
   def teardown
     assert_equal(@assertion_count, @tc.assertions,
-                 "expected #{@assertion_count} assertions to be fired during the test, not #{@tc.assertions}") if @tc.passed?
+                 message { "expected #{@assertion_count} assertions to be fired during the test, not #{@tc.assertions}" }) if @tc.passed?
   end
 
   def non_verbose
@@ -945,8 +920,6 @@ class TestMinitestUnitTestCase < Minitest::Test
   end unless RUBY18
 
   def test_assert_equal_different_diff_deactivated
-    skip "https://github.com/MagLev/maglev/issues/209" if maglev?
-
     without_diff do
       assert_triggered util_msg("haha" * 10, "blah" * 10) do
         o1 = "haha" * 10
@@ -1056,26 +1029,8 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_assert_equal_does_not_allow_lhs_nil
-    if Minitest::VERSION =~ /^6/ then
-      warn "Time to strip the MT5 test"
-
-      @assertion_count += 1
-      assert_triggered(/Use assert_nil if expecting nil/) do
-        @tc.assert_equal nil, nil
-      end
-    else
-      err_re = /Use assert_nil if expecting nil from .*test_minitest_test.rb/
-      err_re = "" if $-w.nil?
-
-      assert_output "", err_re do
-        @tc.assert_equal nil, nil
-      end
-    end
-  end
-
-  def test_assert_equal_does_not_allow_lhs_nil_triggered
-    assert_triggered "Expected: nil\n  Actual: false" do
-      @tc.assert_equal nil, false
+    assert_triggered(/Use assert_nil if expecting nil/) do
+      @tc.assert_equal nil, nil
     end
   end
 
@@ -1094,8 +1049,7 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_assert_in_delta_triggered
-    x = maglev? ? "9.999999xxxe-07" : "1.0e-06"
-    assert_triggered "Expected |0.0 - 0.001| (0.001) to be <= #{x}." do
+    assert_triggered "Expected |0.0 - 0.001| (0.001) to be <= 1.0e-06." do
       @tc.assert_in_delta 0.0, 1.0 / 1000, 0.000001
     end
   end
@@ -1135,9 +1089,7 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_assert_in_epsilon_triggered_negative_case
-    x = (RUBY18 and not maglev?) ? "0.1" : "0.100000xxx"
-    y = maglev? ? "0.100000xxx" : "0.1"
-    assert_triggered "Expected |-1.1 - -1| (#{x}) to be <= #{y}." do
+    assert_triggered "Expected |-1.1 - -1| (0.100000xxx) to be <= #{0.1}." do
       @tc.assert_in_epsilon(-1.1, -1, 0.1)
     end
   end
@@ -1232,10 +1184,12 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_assert_operator
+    @assertion_count += 1
     @tc.assert_operator 2, :>, 1
   end
 
   def test_assert_operator_bad_object
+    @assertion_count += 1
     bad = Object.new
     def bad.== _; true end
 
@@ -1243,6 +1197,7 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_assert_operator_triggered
+    @assertion_count += 1
     assert_triggered "Expected 2 to be < 1." do
       @tc.assert_operator 2, :<, 1
     end
@@ -1312,10 +1267,12 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_assert_predicate
+    @assertion_count += 1
     @tc.assert_predicate "", :empty?
   end
 
   def test_assert_predicate_triggered
+    @assertion_count += 1
     assert_triggered 'Expected "blah" to be empty?.' do
       @tc.assert_predicate "blah", :empty?
     end
@@ -1495,7 +1452,7 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_assert_respond_to_triggered
-    assert_triggered 'Expected "blah" (String) to respond to #rawr!.' do
+    assert_triggered 'Expected "blah" to respond to #rawr!.' do
       @tc.assert_respond_to "blah", :rawr!
     end
   end
@@ -1530,20 +1487,6 @@ class TestMinitestUnitTestCase < Minitest::Test
 
     assert_output nil, dep do
       yield
-    end
-  end
-
-  def test_assert_send
-    assert_deprecated :assert_send do
-      @tc.assert_send [1, :<, 2]
-    end
-  end
-
-  def test_assert_send_bad
-    assert_deprecated :assert_send do
-      assert_triggered "Expected 1.>(*[2]) to return true." do
-        @tc.assert_send [1, :>, 2]
-      end
     end
   end
 
@@ -1681,22 +1624,28 @@ class TestMinitestUnitTestCase < Minitest::Test
     assert_equal "blah2.",         @tc.message("")      { "blah2" }.call
     assert_equal "blah1.\nblah2.", @tc.message(:blah1)  { "blah2" }.call
     assert_equal "blah1.\nblah2.", @tc.message("blah1") { "blah2" }.call
+  end
 
+  def test_message_lambda
+    @assertion_count = 0
     message = proc { "blah1" }
-    assert_equal "blah1.\nblah2.", @tc.message(message) { "blah2" }.call
-
-    message = @tc.message { "blah1" }
-    assert_equal "blah1.\nblah2.", @tc.message(message) { "blah2" }.call
+    assert_equal "blah1", @tc.message(message) { "blah2" }.call
   end
 
   def test_message_message
-    assert_triggered "whoops.\nExpected: 1\n  Actual: 2" do
+    @assertion_count = 0
+    message = @tc.message { "blah1" }
+    assert_equal "blah1.", @tc.message(message) { "blah2" }.call
+  end
+
+  def test_assert_message_message
+    assert_triggered "whoops." do
       @tc.assert_equal 1, 2, message { "whoops" }
     end
   end
 
-  def test_message_lambda
-    assert_triggered "whoops.\nExpected: 1\n  Actual: 2" do
+  def test_assert_message_lambda
+    assert_triggered "whoops" do
       @tc.assert_equal 1, 2, lambda { "whoops" }
     end
   end
@@ -1757,8 +1706,7 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_refute_in_delta_triggered
-    x = maglev? ? "0.100000xxx" : "0.1"
-    assert_triggered "Expected |0.0 - 0.001| (0.001) to not be <= #{x}." do
+    assert_triggered "Expected |0.0 - 0.001| (0.001) to not be <= 0.1." do
       @tc.refute_in_delta 0.0, 1.0 / 1000, 0.1
     end
   end
@@ -1851,20 +1799,25 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_refute_predicate
+    @assertion_count += 1
     @tc.refute_predicate "42", :empty?
   end
 
   def test_refute_predicate_triggered
+    @assertion_count += 1
     assert_triggered 'Expected "" to not be empty?.' do
       @tc.refute_predicate "", :empty?
     end
   end
 
   def test_refute_operator
+    @assertion_count += 1
     @tc.refute_operator 2, :<, 1
   end
 
   def test_refute_operator_bad_object
+    @assertion_count += 1
+
     bad = Object.new
     def bad.== _; true end
 
@@ -1872,6 +1825,7 @@ class TestMinitestUnitTestCase < Minitest::Test
   end
 
   def test_refute_operator_triggered
+    @assertion_count += 1
     assert_triggered "Expected 2 to not be > 1." do
       @tc.refute_operator 2, :>, 1
     end
@@ -1916,12 +1870,7 @@ class TestMinitestUnitTestCase < Minitest::Test
     end
 
     srand 42
-    expected = case
-               when maglev? then
-                 %w[test_test2 test_test3 test_test1]
-               else
-                 %w[test_test2 test_test1 test_test3]
-               end
+    expected = %w[test_test2 test_test1 test_test3]
     assert_equal expected, sample_test_case.runnable_methods
   end
 
@@ -2003,11 +1952,6 @@ class TestMinitestGuard < Minitest::Test
     assert self.jruby? "java"
   end
 
-  def test_rubinius_eh
-    assert self.class.rubinius? "rbx"
-    assert self.rubinius? "rbx"
-  end
-
   def test_windows_eh
     assert self.class.windows? "mswin"
     assert self.windows? "mswin"
@@ -2025,35 +1969,6 @@ class TestMinitestUnitRecording < MetaMetaMetaTestCase
     recorded = first_reporter.results.map(&:failures).flatten.map { |f| f.error.class }
 
     assert_equal expected, recorded
-  end
-
-  def test_run_with_bogus_reporter
-    # https://github.com/seattlerb/minitest/issues/659
-    # TODO: remove test for minitest 6
-    @tu = Class.new FakeNamedTest do
-      def test_method
-        assert true
-      end
-    end
-
-    bogus_reporter = Class.new do      # doesn't subclass AbstractReporter
-      def start; @success = false; end
-      # def prerecord klass, name; end # doesn't define full API
-      def record result; @success = true; end
-      def report; end
-      def passed?; end
-      def results; end
-      def success?; @success; end
-    end.new
-
-    self.reporter = Minitest::CompositeReporter.new
-    reporter << bogus_reporter
-
-    Minitest::Runnable.runnables.delete @tu
-
-    @tu.run reporter, {}
-
-    assert_predicate bogus_reporter, :success?
   end
 
   def test_record_passing

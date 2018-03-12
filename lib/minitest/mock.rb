@@ -209,9 +209,74 @@ class Object
   #     end
   #
 
-  def stub name, val_or_callable, *block_args
-    new_name = "__minitest_stub__#{name}"
+  def stub5 name, val_or_callable, *block_args
+    _mt_rename name do |metaclass|
+      metaclass.send :define_method, name do |*args, &blk|
+        if val_or_callable.respond_to? :call then
+          val_or_callable.call(*args, &blk)
+        else
+          blk.call(*block_args) if blk
+          val_or_callable
+        end
+      end
 
+      yield self
+    end
+  end
+
+  ##
+  # Alternative stub method to be used in minitest 6, unless we use stub6_2.
+
+  def stub6 name, val_or_callable, *block_args
+    _mt_rename name do |metaclass|
+      callable = val_or_callable.respond_to? :call
+      action   = if callable then
+                   val_or_callable
+                 else
+                   lambda { |*a, &b|
+                     if b && !block_args.empty? then
+                       warn "deprecated... from #{caller[1]}"
+                       b.call(*block_args)
+                     end
+                     val_or_callable
+                   }
+                 end
+
+      metaclass.send :define_method, name do |*args, &blk|
+        action.call(*args, &blk)
+      end
+
+      yield self
+    end
+  end
+
+  ##
+  # An even better alternative stub method to be used in minitest 6.
+  #
+  # Does not allow block_args to be passed. This makes it much cleaner
+  # and more explicit what you want to do. See tests for full details.
+
+  def stub6_2 name, val_or_callable, *block_args
+    raise ArgumentError, "stub6 doesn't support block_args" unless
+      block_args.empty?
+
+    _mt_rename name do |metaclass|
+      callable = val_or_callable.respond_to? :call
+      action   = if callable then
+                   val_or_callable
+                 else
+                   lambda { |*a, &b| val_or_callable }
+                 end
+
+      metaclass.send :define_method, name do |*args, &blk|
+        action.call(*args, &blk)
+      end
+
+      yield self
+    end
+  end
+
+  def _mt_rename name # :nodoc:
     metaclass = class << self; self; end
 
     if respond_to? name and not methods.map(&:to_s).include? name.to_s then
@@ -220,21 +285,16 @@ class Object
       end
     end
 
+    new_name = "__minitest_stub__#{name}"
+
     metaclass.send :alias_method, new_name, name
 
-    metaclass.send :define_method, name do |*args, &blk|
-      if val_or_callable.respond_to? :call then
-        val_or_callable.call(*args, &blk)
-      else
-        blk.call(*block_args) if blk
-        val_or_callable
-      end
-    end
-
-    yield self
+    yield metaclass
   ensure
     metaclass.send :undef_method, name
     metaclass.send :alias_method, name, new_name
     metaclass.send :undef_method, new_name
   end
+
+  alias stub stub5 # HACK graduate to 6_2
 end

@@ -6,10 +6,14 @@ require "hoe"
 Hoe.plugin :seattlerb
 Hoe.plugin :rdoc
 
+Hoe.add_include_dirs "../../path_expander/dev/lib"
+
 Hoe.spec "minitest" do
   developer "Ryan Davis", "ryand-ruby@zenspider.com"
 
   license "MIT"
+
+  dependency "path_expander", "~> 1.0"
 
   ## TODO: uncomment this on the last point release on 5.x
   #

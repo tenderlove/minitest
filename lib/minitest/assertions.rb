@@ -30,8 +30,6 @@ module Minitest
       @diff = if (RbConfig::CONFIG["host_os"] =~ /mswin|mingw/ &&
                   system("diff.exe", __FILE__, __FILE__)) then
                 "diff.exe -u"
-              elsif Minitest::Test.maglev? then
-                "diff -u"
               elsif system("gdiff", __FILE__, __FILE__)
                 "gdiff -u" # solaris and kin suck
               elsif system("diff", __FILE__, __FILE__)
@@ -106,13 +104,10 @@ module Minitest
 
     def mu_pp obj
       s = obj.inspect
+      s = s.encode Encoding.default_external
 
-      if defined? Encoding then
-        s = s.encode Encoding.default_external
-
-        if String === obj && obj.encoding != Encoding.default_external then
-          s = "# encoding: #{obj.encoding}\n#{s}"
-        end
+      if String === obj && obj.encoding != Encoding.default_external then
+        s = "# encoding: #{obj.encoding}\n#{s}"
       end
 
       s
@@ -149,9 +144,8 @@ module Minitest
     # Fails unless +obj+ is empty.
 
     def assert_empty obj, msg = nil
-      msg = message(msg) { "Expected #{mu_pp(obj)} to be empty" }
-      assert_respond_to obj, :empty?
-      assert obj.empty?, msg
+      msg = message(msg) { "Expected #{mu_pp(obj)} to be empty" } # TODO: remove
+      assert_predicate obj, :empty?, msg
     end
 
     E = "" # :nodoc:
@@ -171,20 +165,10 @@ module Minitest
 
     def assert_equal exp, act, msg = nil
       msg = message(msg, E) { diff exp, act }
-      result = assert exp == act, msg
 
-      if nil == exp then
-        if Minitest::VERSION =~ /^6/ then
-          refute_nil exp, "Use assert_nil if expecting nil."
-        else
-          where = Minitest.filter_backtrace(caller).first
-          where = where.split(/:in /, 2).first # clean up noise
+      refute_nil exp, message { "Use assert_nil if expecting nil" } if exp.nil? # HACK
 
-          warn "DEPRECATED: Use assert_nil if expecting nil from #{where}. This will fail in Minitest 6."
-        end
-      end
-
-      result
+      assert exp == act, msg
     end
 
     ##
@@ -216,8 +200,7 @@ module Minitest
       msg = message(msg) {
         "Expected #{mu_pp(collection)} to include #{mu_pp(obj)}"
       }
-      assert_respond_to collection, :include?
-      assert collection.include?(obj), msg
+      assert_operator collection, :include?, obj, msg
     end
 
     ##
@@ -227,7 +210,6 @@ module Minitest
       msg = message(msg) {
         "Expected #{mu_pp(obj)} to be an instance of #{cls}, not #{obj.class}"
       }
-
       assert obj.instance_of?(cls), msg
     end
 
@@ -236,8 +218,8 @@ module Minitest
 
     def assert_kind_of cls, obj, msg = nil
       msg = message(msg) {
-        "Expected #{mu_pp(obj)} to be a kind of #{cls}, not #{obj.class}" }
-
+        "Expected #{mu_pp(obj)} to be a kind of #{cls}, not #{obj.class}"
+      }
       assert obj.kind_of?(cls), msg
     end
 
@@ -246,9 +228,8 @@ module Minitest
 
     def assert_match matcher, obj, msg = nil
       msg = message(msg) { "Expected #{mu_pp matcher} to match #{mu_pp obj}" }
-      assert_respond_to matcher, :"=~"
       matcher = Regexp.new Regexp.escape matcher if String === matcher
-      assert matcher =~ obj, msg
+      assert_operator matcher, :=~, obj, msg
     end
 
     ##
@@ -266,6 +247,7 @@ module Minitest
 
     def assert_operator o1, op, o2 = UNDEFINED, msg = nil
       return assert_predicate o1, op, msg if UNDEFINED == o2
+      assert_respond_to o1, op
       msg = message(msg) { "Expected #{mu_pp(o1)} to be #{op} #{mu_pp(o2)}" }
       assert o1.__send__(op, o2), msg
     end
@@ -306,6 +288,7 @@ module Minitest
     #   str.must_be :empty?
 
     def assert_predicate o1, op, msg = nil
+      assert_respond_to o1, op
       msg = message(msg) { "Expected #{mu_pp(o1)} to be #{op}" }
       assert o1.__send__(op), msg
     end
@@ -347,9 +330,7 @@ module Minitest
     # Fails unless +obj+ responds to +meth+.
 
     def assert_respond_to obj, meth, msg = nil
-      msg = message(msg) {
-        "Expected #{mu_pp(obj)} (#{obj.class}) to respond to ##{meth}"
-      }
+      msg = message(msg) { "Expected #{mu_pp(obj)} to respond to ##{meth}" }
       assert obj.respond_to?(meth), msg
     end
 
@@ -362,22 +343,6 @@ module Minitest
         "Expected %s (oid=%d) to be the same as %s (oid=%d)" % data
       }
       assert exp.equal?(act), msg
-    end
-
-    ##
-    # +send_ary+ is a receiver, message and arguments.
-    #
-    # Fails unless the call returns a true value
-
-    def assert_send send_ary, m = nil
-      where = Minitest.filter_backtrace(caller).first
-      where = where.split(/:in /, 2).first # clean up noise
-      warn "DEPRECATED: assert_send. From #{where}"
-
-      recv, msg, *args = send_ary
-      m = message(m) {
-        "Expected #{mu_pp(recv)}.#{msg}(*#{mu_pp(args)}) to return true" }
-      assert recv.__send__(msg, *args), m
     end
 
     ##
@@ -400,14 +365,9 @@ module Minitest
       catch(sym) do
         begin
           yield
-        rescue ThreadError => e       # wtf?!? 1.8 + threads == suck
-          default += ", not \:#{e.message[/uncaught throw \`(\w+?)\'/, 1]}"
-        rescue ArgumentError => e     # 1.9 exception
+        rescue ArgumentError => e     # 1.9+ exception
           raise e unless e.message.include?("uncaught throw")
           default += ", not #{e.message.split(/ /).last}"
-        rescue NameError => e         # 1.8 exception
-          raise e unless e.name == sym
-          default += ", not #{e.name.inspect}"
         end
         caught = false
       end
@@ -512,11 +472,14 @@ module Minitest
     end
 
     ##
-    # Returns a proc that will output +msg+ along with the default message.
+    # Returns a proc that delays generation of an output message. If
+    # +msg+ is a proc (eg, from another +message+ call) return +msg+
+    # as-is. Otherwise, return a proc that will output +msg+ along
+    # with the value of the result of the block passed to +message+.
 
     def message msg = nil, ending = nil, &default
+      return msg if Proc === msg
       proc {
-        msg = msg.call.chomp(".") if Proc === msg
         custom_message = "#{msg}.\n" unless msg.nil? or msg.to_s.empty?
         "#{custom_message}#{default.call}#{ending || "."}"
       }
@@ -542,8 +505,7 @@ module Minitest
 
     def refute_empty obj, msg = nil
       msg = message(msg) { "Expected #{mu_pp(obj)} to not be empty" }
-      assert_respond_to obj, :empty?
-      refute obj.empty?, msg
+      refute_predicate obj, :empty?, msg
     end
 
     ##
@@ -580,14 +542,11 @@ module Minitest
     end
 
     ##
-    # Fails if +collection+ includes +obj+.
+    # Fails if +obj+ includes +sub+.
 
-    def refute_includes collection, obj, msg = nil
-      msg = message(msg) {
-        "Expected #{mu_pp(collection)} to not include #{mu_pp(obj)}"
-      }
-      assert_respond_to collection, :include?
-      refute collection.include?(obj), msg
+    def refute_includes obj, sub, msg = nil
+      msg = message(msg) { "Expected #{mu_pp obj} to not include #{mu_pp sub}" }
+      refute_operator obj, :include?, sub, msg
     end
 
     ##
@@ -613,9 +572,8 @@ module Minitest
 
     def refute_match matcher, obj, msg = nil
       msg = message(msg) { "Expected #{mu_pp matcher} to not match #{mu_pp obj}" }
-      assert_respond_to matcher, :"=~"
       matcher = Regexp.new Regexp.escape matcher if String === matcher
-      refute matcher =~ obj, msg
+      refute_operator matcher, :=~, obj, msg
     end
 
     ##
@@ -634,6 +592,7 @@ module Minitest
 
     def refute_operator o1, op, o2 = UNDEFINED, msg = nil
       return refute_predicate o1, op, msg if UNDEFINED == o2
+      assert_respond_to o1, op
       msg = message(msg) { "Expected #{mu_pp(o1)} to not be #{op} #{mu_pp(o2)}" }
       refute o1.__send__(op, o2), msg
     end
@@ -648,6 +607,7 @@ module Minitest
     #   str.wont_be :empty?
 
     def refute_predicate o1, op, msg = nil
+      assert_respond_to o1, op
       msg = message(msg) { "Expected #{mu_pp(o1)} to not be #{op}" }
       refute o1.__send__(op), msg
     end
@@ -657,7 +617,6 @@ module Minitest
 
     def refute_respond_to obj, meth, msg = nil
       msg = message(msg) { "Expected #{mu_pp(obj)} to not respond to #{meth}" }
-
       refute obj.respond_to?(meth), msg
     end
 
@@ -679,15 +638,7 @@ module Minitest
 
     def skip msg = nil, bt = caller
       msg ||= "Skipped, no message given"
-      @skip = true
       raise Minitest::Skip, msg, bt
-    end
-
-    ##
-    # Was this testcase skipped? Meant for #teardown.
-
-    def skipped?
-      defined?(@skip) and @skip
     end
   end
 end

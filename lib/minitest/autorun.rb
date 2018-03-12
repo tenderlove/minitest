@@ -1,9 +1,4 @@
-begin
-  require "rubygems"
-  gem "minitest"
-rescue Gem::LoadError
-  # do nothing
-end
+gem "minitest" # ensure we're using gemified minitest, not system TODO: REMOVE?
 
 require "minitest"
 require "minitest/spec"

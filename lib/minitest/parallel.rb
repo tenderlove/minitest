@@ -1,6 +1,7 @@
+require "thread"
+
 module Minitest
   module Parallel #:nodoc:
-
     ##
     # The engine used to run multiple tests in parallel.
 
