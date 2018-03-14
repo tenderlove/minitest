@@ -190,6 +190,21 @@ module Minitest
         options[:exclude] = a
       end
 
+      opts.on "-l", "--listen PORT", "Listen on port PORT" do |a|
+        require 'minitest/drb'
+        uri = "druby://localhost:#{a}"
+        number_of_clients = (ENV["N"] || 2).to_i
+        self.parallel_executor = Minitest::DRb::Server::Executor.new(number_of_clients, uri)
+        puts "Listening on #{uri}"
+      end
+
+      opts.on "-c", "--connect PORT", "Connect to port PORT" do |a|
+        require 'minitest/drb'
+        uri = "druby://localhost:#{a}"
+        self.parallel_executor = Minitest::DRb::Client::Executor.new(uri)
+        options[:connect] = a
+      end
+
       unless extensions.empty?
         opts.separator ""
         opts.separator "Known extensions: #{extensions.join(", ")}"
