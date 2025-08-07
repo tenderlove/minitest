@@ -20,6 +20,9 @@ module Minitest
     (class << self; self; end).attr_accessor name
   end
 
+  autoload :Ractorize, "minitest/ractorize"
+  autoload :Parallel, "minitest/parallel"
+
   ##
   # The random seed used for this run. This is used to srand at the
   # start of the run and between each +Runnable.run+.
@@ -34,9 +37,6 @@ module Minitest
   cattr_accessor :parallel_executor
 
   warn "DEPRECATED: use MT_CPU instead of N for parallel test runs" if ENV["N"] && ENV["N"].to_i > 0
-  n_threads = (ENV["MT_CPU"] || ENV["N"] || Etc.nprocessors).to_i
-
-  self.parallel_executor = Parallel::Executor.new n_threads
 
   ##
   # Filter object for backtraces.

@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require "minitest" unless defined? Minitest::Runnable
 
 module Minitest
@@ -16,11 +17,11 @@ module Minitest
       self.class.name # for Minitest::Reportable
     end
 
-    PASSTHROUGH_EXCEPTIONS = [NoMemoryError, SignalException, SystemExit] # :nodoc:
+    PASSTHROUGH_EXCEPTIONS = [NoMemoryError, SignalException, SystemExit].freeze # :nodoc:
 
-    SETUP_METHODS = %w[ before_setup setup after_setup ] # :nodoc:
+    SETUP_METHODS = %w[ before_setup setup after_setup ].freeze # :nodoc:
 
-    TEARDOWN_METHODS = %w[ before_teardown teardown after_teardown ] # :nodoc:
+    TEARDOWN_METHODS = %w[ before_teardown teardown after_teardown ].freeze # :nodoc:
 
     # :stopdoc:
     class << self; attr_accessor :io_lock; end
@@ -60,6 +61,15 @@ module Minitest
     def self.parallelize_me!
       include Minitest::Parallel::Test
       extend Minitest::Parallel::Test::ClassMethods
+      n_threads = (ENV["MT_CPU"] || ENV["N"] || Etc.nprocessors).to_i
+      Minitest.parallel_executor = Parallel::Executor.new n_threads
+    end
+
+    def self.ractorize_me!
+      include Minitest::Ractorize::Test
+      extend Minitest::Ractorize::Test::ClassMethods
+      n_threads = (ENV["MT_CPU"] || ENV["N"] || Etc.nprocessors).to_i
+      Minitest.parallel_executor = Ractorize::Executor.new n_threads
     end
 
     ##
