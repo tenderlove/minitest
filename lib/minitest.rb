@@ -291,7 +291,7 @@ module Minitest
     rescue Interrupt
       warn "Interrupted. Exiting..."
     end
-    self.parallel_executor.shutdown
+    self.parallel_executor.shutdown if parallel_executor.respond_to? :shutdown
 
     # might have been removed/replaced during init_plugins:
     summary = reporter.reporters.grep(SummaryReporter).first
